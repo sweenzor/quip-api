@@ -18,6 +18,13 @@ The following items are not currently backed up:
 * Images in documents
 * Contacts
 
-You may run into rate limiting issues depending on the size of your account.
+~~You may run into rate limiting issues depending on the size of your account.~~
+Added sleep to fix
 
 Resuming of interrupted backups is currently not supported.
+
+## Export to markdown
+
+- [x] Flag to not export messages
+- [x] Export Shared directories, not Starred ones
+- [ ] Created/Modified info

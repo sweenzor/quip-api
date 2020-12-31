@@ -29,6 +29,7 @@ import sys
 import urllib2
 import xml.etree.cElementTree
 import xml.sax.saxutils
+import time
 
 reload(sys)
 sys.setdefaultencoding('utf8')
@@ -57,6 +58,8 @@ def main():
              "https://platform.quip.com will be used")
     parser.add_argument("--output_directory", default="./",
         help="Directory where to place backup data.")
+    parser.add_argument("--exclude_messages", action='store_false',
+        help="Don't include messages in document export")
 
     args = parser.parse_args()
 
@@ -70,32 +73,36 @@ def main():
     output_static_diretory = os.path.join(
         output_directory, _OUTPUT_STATIC_DIRECTORY_NAME)
     shutil.copytree(_STATIC_DIRECTORY, output_static_diretory)
-    _run_backup(client, output_directory, args.root_folder_id)
+    _run_backup(client, output_directory, args.root_folder_id, args.exclude_messages)
 
-def _run_backup(client, output_directory, root_folder_id):
+def _run_backup(client, output_directory, root_folder_id, exclude_messages):
     user = client.get_authenticated_user()
     processed_folder_ids = set()
+    print(user)
     if root_folder_id:
         _descend_into_folder(root_folder_id, processed_folder_ids,
-            client, output_directory, 0)
+            client, output_directory, 0, exclude_messages)
     else:
         _descend_into_folder(user["private_folder_id"], processed_folder_ids,
-            client, output_directory, 0)
-        _descend_into_folder(user["starred_folder_id"], processed_folder_ids,
-            client, output_directory, 0)
+            client, output_directory, 0, exclude_messages)
+        #_descend_into_folder(user["starred_folder_id"], processed_folder_ids,
+        #    client, output_directory, 0, exclude_messages)
+        for shared_folder_id in user["shared_folder_ids"]:
+            _descend_into_folder(shared_folder_id, processed_folder_ids,
+                client, os.path.join(output_directory, 'Shared'), 0, exclude_messages)
+
     logging.info("Looking for conversations")
     conversation_threads = _get_conversation_threads(client)
     if conversation_threads:
         conversations_directory = os.path.join(output_directory, "Conversations")
         _ensure_path_exists(conversations_directory)
         for thread in conversation_threads:
-            _backup_thread(thread, client, conversations_directory, 1)
+            _backup_thread(thread, client, conversations_directory, 1, exclude_messages)
 
 def _descend_into_folder(folder_id, processed_folder_ids, client,
-        output_directory, depth):
+        output_directory, depth, exclude_messages, path=None):
     if folder_id in processed_folder_ids:
         return
-    processed_folder_ids.add(folder_id)
     try:
         folder = client.get_folder(folder_id)
     except quip.QuipError as e:
@@ -111,18 +118,23 @@ def _descend_into_folder(folder_id, processed_folder_ids, client,
             "  " * depth, folder_id, e.code)
         return
     title = folder["folder"].get("title", "Folder %s" % folder_id)
+    if not path:
+        path = title
+    else:
+        path = "{}/{}".format(path, title)
     logging.info("%sBacking up folder %s...", "  " * depth, title)
     folder_output_path = os.path.join(output_directory, _sanitize_title(title))
     _ensure_path_exists(folder_output_path)
     for child in folder["children"]:
         if "folder_id" in child:
             _descend_into_folder(child["folder_id"], processed_folder_ids,
-                client, folder_output_path, depth + 1)
+                client, folder_output_path, depth + 1, exclude_messages, path)
         elif "thread_id" in child:
             thread = client.get_thread(child["thread_id"])
-            _backup_thread(thread, client, folder_output_path, depth + 1)
+            _backup_thread(thread, client, folder_output_path, depth + 1, exclude_messages, path)
 
-def _backup_thread(thread, client, output_directory, depth):
+def _backup_thread(thread, client, output_directory, depth, exclude_messages, path):
+    time.sleep(1)
     thread_id = thread["thread"]["id"]
     title = thread["thread"]["title"]
     logging.info("%sBacking up thread %s (%s)...",
@@ -155,6 +167,7 @@ def _backup_thread(thread, client, output_directory, depth):
             with open(image_output_path, "w") as image_file:
                 image_file.write(blob_response.read())
             img.set("src", image_filename)
+
         html = unicode(xml.etree.cElementTree.tostring(tree))
         # Strip the <html> tags that were introduced in parse_document_html
         html = html[6:-7]
@@ -171,7 +184,7 @@ def _backup_thread(thread, client, output_directory, depth):
         with open(document_output_path, "w") as document_file:
             document_file.write(document_html.encode("utf-8"))
     messages = _get_thread_messages(thread_id, client)
-    if messages:
+    if messages and exclude_messages:
         title_suffix = "messages" if "html" in thread else thread_id
         message_file_name = "%s (%s).html" % (sanitized_title, title_suffix)
         messages_output_path = os.path.join(output_directory, message_file_name)
