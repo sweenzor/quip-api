@@ -137,6 +137,12 @@ def _backup_thread(thread, client, output_directory, depth, exclude_messages, pa
     time.sleep(1)
     thread_id = thread["thread"]["id"]
     title = thread["thread"]["title"]
+
+    # Skip spreadsheets
+    if thread["thread"]["type"] == "spreadsheet":
+        logging.info("Spreadsheet, skipping")
+        return
+
     logging.info("%sBacking up thread %s (%s)...",
         "  " * depth, title, thread_id)
     sanitized_title = _sanitize_title(title)
