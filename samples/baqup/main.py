@@ -137,6 +137,8 @@ def _backup_thread(thread, client, output_directory, depth, exclude_messages, pa
     time.sleep(1)
     thread_id = thread["thread"]["id"]
     title = thread["thread"]["title"]
+    created_at = _escape(_format_usec(thread["thread"]["created_usec"]))
+    updated_at = _escape(_format_usec(thread["thread"]["updated_usec"]))
 
     # Skip spreadsheets
     if thread["thread"]["type"] == "spreadsheet":
@@ -174,6 +176,10 @@ def _backup_thread(thread, client, output_directory, depth, exclude_messages, pa
                 image_file.write(blob_response.read())
             img.set("src", image_filename)
 
+        # Delete the first header
+        first_title = tree.find('h1')
+        tree.remove(first_title)
+
         html = unicode(xml.etree.cElementTree.tostring(tree))
         # Strip the <html> tags that were introduced in parse_document_html
         html = html[6:-7]
@@ -186,6 +192,9 @@ def _backup_thread(thread, client, output_directory, depth, exclude_messages, pa
             "stylesheet_path": ("../" * depth) +
                 _OUTPUT_STATIC_DIRECTORY_NAME + "/main.css",
             "body": html,
+            "path": path,
+            "created": created_at,
+            "updated": updated_at
         }
         with open(document_output_path, "w") as document_file:
             document_file.write(document_html.encode("utf-8"))
@@ -281,7 +290,7 @@ def _escape(s):
     return xml.sax.saxutils.escape(s, {'"': "&quot;"})
 
 def _format_usec(usec):
-    return datetime.datetime.utcfromtimestamp(usec / 1000000.0).isoformat()
+    return "{}Z".format(datetime.datetime.utcfromtimestamp(int(usec / 1e6)).isoformat('T'))
 
 _DOCUMENT_TEMPLATE = _read_template("document.html")
 _MESSAGE_TEMPLATE = _read_template("message.html")
